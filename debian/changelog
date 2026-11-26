@@ -1,0 +1,7 @@
+mcp-server-graphiti (0.32.1+mcp1.1.5-1) UNRELEASED; urgency=medium
+
+  * Initial Debian packaging of graphiti-core 0.32.1 and Graphiti MCP
+    server 1.1.5.
+  * Package the server and mcprack companion from one source.
+
+ -- Vítězslav Dvořák <info@vitexsoftware.cz>  Thu, 26 Nov 2026 16:45:00 +0100

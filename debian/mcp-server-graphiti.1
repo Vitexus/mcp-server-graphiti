@@ -1,0 +1,27 @@
+.TH MCP-SERVER-GRAPHITI 1 "November 2026" "mcp-server-graphiti 1.1.5" "User Commands"
+.SH NAME
+mcp-server-graphiti \- MCP server for temporal Graphiti knowledge graphs
+.SH SYNOPSIS
+.B mcp-server-graphiti
+.RB [\|\-\-help \| \|\-\-version \|]
+.RB [\|\-\-transport\ stdio|http|sse \|]
+.SH DESCRIPTION
+.B mcp-server-graphiti
+exposes Graphiti episodic memory, entity search, fact search, provenance,
+saga summaries and graph community operations through the Model Context
+Protocol. The packaged configuration uses stdio and Neo4j.
+.PP
+External Graphiti services are initialized lazily when a tool is called.
+MCP clients can therefore inspect the available tools before Neo4j or
+OpenAI credentials are configured.
+.SH READ-ONLY MODE
+Set
+.B MCP_SERVER_GRAPHITI_READ_ONLY=true
+to register only non-mutating tools. The mcprack companion package sets this
+by default.
+.SH FILES
+.I /etc/mcp-server-graphiti/config.yaml
+.br
+.I /usr/share/mcp-server-graphiti/server.json
+.SH SEE ALSO
+.BR mcprack (1)

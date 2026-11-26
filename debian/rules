@@ -1,0 +1,36 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+
+%:
+	dh $@ --with python3
+
+override_dh_auto_build:
+	rm -rf .pybuild .pybuild-core
+	pybuild --build -d .
+	mkdir -p .pybuild-core
+	find .pybuild -name 'graphiti_core-*.whl' -exec cp {} .pybuild-core/ \;
+	rm -rf .pybuild
+	pybuild --build -d mcp_server
+
+override_dh_auto_install:
+	python3 -m installer --destdir debian/python3-graphiti-core \
+		--prefix /usr .pybuild-core/graphiti_core-*.whl
+	pybuild --install -d mcp_server --dest-dir debian/mcp-server-graphiti
+	install -D -m644 debian/config.yaml \
+		debian/mcp-server-graphiti/etc/mcp-server-graphiti/config.yaml
+	install -D -m644 server.json \
+		debian/mcp-server-graphiti/usr/share/mcp-server-graphiti/server.json
+	install -D -m644 SKILL.md \
+		debian/mcp-server-graphiti/usr/share/mcp-server-graphiti/SKILL.md
+	install -D -m644 debian/mcp-server-graphiti.metainfo.xml \
+		debian/mcp-server-graphiti/usr/share/metainfo/io.github.vitexsoftware.mcp-server-graphiti.metainfo.xml
+
+override_dh_auto_test:
+	appstreamcli validate --pedantic --no-net debian/mcp-server-graphiti.metainfo.xml
+
+override_dh_auto_clean:
+	pybuild --clean -d .
+	pybuild --clean -d mcp_server
+	rm -rf .pybuild .pybuild-core
+	dh_auto_clean

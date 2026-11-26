@@ -1,6 +1,20 @@
 #!/usr/bin/env python3
 """
-Graphiti MCP Server - Exposes Graphiti functionality through the Model Context Protocol (MCP)
+Copyright 2026, Zep Software, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+Graphiti MCP Server - Exposes Graphiti functionality through the Model Context Protocol (MCP).
 """
 
 import argparse
@@ -9,9 +23,12 @@ import copy
 import logging
 import os
 import sys
+from collections.abc import Callable
 from datetime import datetime, timezone
+from functools import wraps
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -22,7 +39,8 @@ from graphiti_core.nodes import EntityNode, EpisodeType, EpisodicNode, SagaNode
 from graphiti_core.search.search_filters import SearchFilters
 from graphiti_core.utils.maintenance.graph_data_operations import clear_data
 from mcp.server.mcpserver import MCPServer
-from pydantic import BaseModel
+from mcp.types import ToolAnnotations
+from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
 from config.schema import GraphitiConfig, ServerConfig
@@ -180,6 +198,77 @@ mcp = MCPServer(
     instructions=GRAPHITI_MCP_INSTRUCTIONS,
 )
 
+READ_ONLY_ANNOTATIONS = ToolAnnotations(
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=True,
+)
+CREATE_ANNOTATIONS = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=False,
+    open_world_hint=True,
+)
+ASSIGN_ANNOTATIONS = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=True,
+)
+MUTATE_ANNOTATIONS = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=True,
+    idempotent_hint=True,
+    open_world_hint=True,
+)
+MUTATING_TOOLS = frozenset(
+    {
+        'add_memory',
+        'delete_entity_edge',
+        'delete_episode',
+        'summarize_saga',
+        'build_communities',
+        'add_triplet',
+        'clear_graph',
+    }
+)
+
+
+def read_only_mode() -> bool:
+    """Return whether mutating tools are disabled."""
+    return os.getenv('MCP_SERVER_GRAPHITI_READ_ONLY', 'false').lower() in (
+        '1',
+        'true',
+        'yes',
+        'on',
+    )
+
+
+def public_error(operation: str, error: Exception) -> str:
+    """Log an exception class and return a message safe for MCP clients."""
+    logger.error('%s failed (%s)', operation, type(error).__name__)
+    return f'{operation} failed. Check server logs and backend configuration.'
+
+
+def lazy_tool(**tool_kwargs):
+    """Register an MCP tool whose backend initializes on its first invocation."""
+
+    def decorator(function: Callable):
+        @wraps(function)
+        async def invoke(*args, **kwargs):
+            try:
+                if graphiti_service is None:
+                    await initialize_runtime_services()
+            except Exception as error:
+                raise RuntimeError(public_error('Initializing Graphiti backend', error)) from None
+            return await function(*args, **kwargs)
+
+        return mcp.tool(**tool_kwargs)(invoke)
+
+    return decorator
+
+
 # Global services
 graphiti_service: Optional['GraphitiService'] = None
 queue_service: QueueService | None = None
@@ -247,13 +336,13 @@ class GraphitiService:
             try:
                 llm_client = LLMClientFactory.create(self.config.llm)
             except Exception as e:
-                logger.warning(f'Failed to create LLM client: {e}')
+                logger.warning('Failed to create LLM client (%s)', type(e).__name__)
 
             # Create embedder client based on configured provider
             try:
                 embedder_client = EmbedderFactory.create(self.config.embedder)
             except Exception as e:
-                logger.warning(f'Failed to create embedder client: {e}')
+                logger.warning('Failed to create embedder client (%s)', type(e).__name__)
 
             # Create cross-encoder (reranker) client. Without this, Graphiti defaults to
             # OpenAIRerankerClient, which needs an OpenAI API key even on non-OpenAI setups.
@@ -387,7 +476,7 @@ class GraphitiService:
             logger.info(f'Using group_id: {self.config.graphiti.group_id}')
 
         except Exception as e:
-            logger.error(f'Failed to initialize Graphiti client: {e}')
+            logger.error('Failed to initialize Graphiti client (%s)', type(e).__name__)
             raise
 
     async def get_client(self) -> Graphiti:
@@ -399,21 +488,47 @@ class GraphitiService:
         return self.client
 
 
-@mcp.tool()
+@lazy_tool(
+    title='Add Memory',
+    description='Queue an episode for extraction and insertion into the knowledge graph.',
+    annotations=CREATE_ANNOTATIONS,
+)
 async def add_memory(
-    name: str,
-    episode_body: str,
-    group_id: str | None = None,
-    source: str = 'text',
-    source_description: str = '',
-    uuid: str | None = None,
-    reference_time: str | None = None,
-    excluded_entity_types: list[str] | None = None,
-    custom_extraction_instructions: str | None = None,
-    previous_episode_uuids: list[str] | None = None,
-    update_communities: bool = False,
-    saga: str | None = None,
-    saga_previous_episode_uuid: str | None = None,
+    name: Annotated[str, Field(description='Human-readable episode name.')],
+    episode_body: Annotated[str, Field(description='Text, JSON, or message content to ingest.')],
+    group_id: Annotated[
+        str | None,
+        Field(description='Graph namespace; the configured default is used when omitted.'),
+    ] = None,
+    source: Annotated[
+        str, Field(description='Episode source type: text, json, or message.')
+    ] = 'text',
+    source_description: Annotated[
+        str, Field(description='Optional provenance description for the episode.')
+    ] = '',
+    uuid: Annotated[str | None, Field(description='Optional caller-supplied episode UUID.')] = None,
+    reference_time: Annotated[
+        str | None, Field(description='ISO-8601 event occurrence time; omitted means now.')
+    ] = None,
+    excluded_entity_types: Annotated[
+        list[str] | None,
+        Field(description='Configured entity type names to skip during extraction.'),
+    ] = None,
+    custom_extraction_instructions: Annotated[
+        str | None, Field(description='Episode-specific extraction guidance.')
+    ] = None,
+    previous_episode_uuids: Annotated[
+        list[str] | None, Field(description='Explicit prior episode UUIDs used as context.')
+    ] = None,
+    update_communities: Annotated[
+        bool, Field(description='Refresh affected community summaries after ingestion.')
+    ] = False,
+    saga: Annotated[
+        str | None, Field(description='Optional saga name used to order related episodes.')
+    ] = None,
+    saga_previous_episode_uuid: Annotated[
+        str | None, Field(description='UUID of the preceding episode in the saga.')
+    ] = None,
 ) -> SuccessResponse | ErrorResponse:
     """Add an episode to memory. This is the primary way to add information to the graph.
 
@@ -530,18 +645,27 @@ async def add_memory(
             message=f"Episode '{name}' queued for processing in group '{effective_group_id}'"
         )
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error queuing episode: {error_msg}')
-        return ErrorResponse(error=f'Error queuing episode: {error_msg}')
+        return ErrorResponse(error=public_error('Queuing episode', e))
 
 
-@mcp.tool()
+@lazy_tool(
+    title='Search Nodes',
+    description='Search graph entities with semantic, keyword, and graph ranking.',
+    annotations=READ_ONLY_ANNOTATIONS,
+)
 async def search_nodes(
-    query: str,
-    group_ids: str | list[str] | None = None,
-    max_nodes: int = 10,
-    entity_types: list[str] | None = None,
-    center_node_uuid: str | None = None,
+    query: Annotated[str, Field(description='Semantic or keyword entity search query.')],
+    group_ids: Annotated[
+        str | list[str] | None,
+        Field(description='One graph group ID or a list of graph group IDs.'),
+    ] = None,
+    max_nodes: Annotated[int, Field(description='Maximum nodes to return.', ge=1, le=100)] = 10,
+    entity_types: Annotated[
+        list[str] | None, Field(description='Optional entity type names to include.')
+    ] = None,
+    center_node_uuid: Annotated[
+        str | None, Field(description='Entity UUID used as the graph-distance search center.')
+    ] = None,
 ) -> NodeSearchResponse | ErrorResponse:
     """Search for nodes (entities) in the graph memory.
 
@@ -607,22 +731,39 @@ async def search_nodes(
 
         return NodeSearchResponse(message='Nodes retrieved successfully', nodes=node_results)
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error searching nodes: {error_msg}')
-        return ErrorResponse(error=f'Error searching nodes: {error_msg}')
+        return ErrorResponse(error=public_error('Searching nodes', e))
 
 
-@mcp.tool()
+@lazy_tool(
+    title='Search Memory Facts',
+    description='Search temporal facts and optionally filter by graph or date range.',
+    annotations=READ_ONLY_ANNOTATIONS,
+)
 async def search_memory_facts(
-    query: str,
-    group_ids: str | list[str] | None = None,
-    max_facts: int = 10,
-    center_node_uuid: str | None = None,
-    edge_types: list[str] | None = None,
-    valid_at_after: str | None = None,
-    valid_at_before: str | None = None,
-    invalid_at_after: str | None = None,
-    invalid_at_before: str | None = None,
+    query: Annotated[str, Field(description='Semantic or keyword fact search query.')],
+    group_ids: Annotated[
+        str | list[str] | None,
+        Field(description='One graph group ID or a list of graph group IDs.'),
+    ] = None,
+    max_facts: Annotated[int, Field(description='Maximum facts to return.', ge=1, le=100)] = 10,
+    center_node_uuid: Annotated[
+        str | None, Field(description='Entity UUID used as the graph-distance search center.')
+    ] = None,
+    edge_types: Annotated[
+        list[str] | None, Field(description='Optional fact type names to include.')
+    ] = None,
+    valid_at_after: Annotated[
+        str | None, Field(description='Inclusive ISO-8601 lower bound for fact validity.')
+    ] = None,
+    valid_at_before: Annotated[
+        str | None, Field(description='Exclusive ISO-8601 upper bound for fact validity.')
+    ] = None,
+    invalid_at_after: Annotated[
+        str | None, Field(description='Inclusive ISO-8601 lower bound for fact invalidation.')
+    ] = None,
+    invalid_at_before: Annotated[
+        str | None, Field(description='Exclusive ISO-8601 upper bound for fact invalidation.')
+    ] = None,
 ) -> FactSearchResponse | ErrorResponse:
     """Search the graph memory for relevant facts (entity edges).
 
@@ -687,14 +828,19 @@ async def search_memory_facts(
         facts = [format_fact_result(edge) for edge in relevant_edges]
         return FactSearchResponse(message='Facts retrieved successfully', facts=facts)
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error searching facts: {error_msg}')
-        return ErrorResponse(error=f'Error searching facts: {error_msg}')
+        return ErrorResponse(error=public_error('Searching facts', e))
 
 
-@mcp.tool()
+@lazy_tool(
+    title='Delete Entity Edge',
+    description='Delete a fact from the knowledge graph.',
+    annotations=MUTATE_ANNOTATIONS,
+)
 async def delete_entity_edge(
-    uuid: str, group_id: str | None = None
+    uuid: Annotated[str, Field(description='UUID of the fact to delete.')],
+    group_id: Annotated[
+        str | None, Field(description='Graph namespace containing the fact.')
+    ] = None,
 ) -> SuccessResponse | ErrorResponse:
     """Delete an entity edge from the graph memory.
 
@@ -722,13 +868,20 @@ async def delete_entity_edge(
         await entity_edge.delete(driver)
         return SuccessResponse(message=f'Entity edge with UUID {uuid} deleted successfully')
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error deleting entity edge: {error_msg}')
-        return ErrorResponse(error=f'Error deleting entity edge: {error_msg}')
+        return ErrorResponse(error=public_error('Deleting entity edge', e))
 
 
-@mcp.tool()
-async def delete_episode(uuid: str, group_id: str | None = None) -> SuccessResponse | ErrorResponse:
+@lazy_tool(
+    title='Delete Episode',
+    description='Delete an episode and data supported only by that episode.',
+    annotations=MUTATE_ANNOTATIONS,
+)
+async def delete_episode(
+    uuid: Annotated[str, Field(description='UUID of the episode to delete.')],
+    group_id: Annotated[
+        str | None, Field(description='Graph namespace containing the episode.')
+    ] = None,
+) -> SuccessResponse | ErrorResponse:
     """Delete an episode from the graph memory.
 
     Uses Graphiti.remove_episode, which cascades the deletion: entities and facts
@@ -756,13 +909,20 @@ async def delete_episode(uuid: str, group_id: str | None = None) -> SuccessRespo
         await scoped_client.remove_episode(uuid, group_id=effective_group_id or None)
         return SuccessResponse(message=f'Episode with UUID {uuid} deleted successfully')
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error deleting episode: {error_msg}')
-        return ErrorResponse(error=f'Error deleting episode: {error_msg}')
+        return ErrorResponse(error=public_error('Deleting episode', e))
 
 
-@mcp.tool()
-async def get_entity_edge(uuid: str, group_id: str | None = None) -> dict[str, Any] | ErrorResponse:
+@lazy_tool(
+    title='Get Entity Edge',
+    description='Retrieve a temporal fact by UUID.',
+    annotations=READ_ONLY_ANNOTATIONS,
+)
+async def get_entity_edge(
+    uuid: Annotated[str, Field(description='UUID of the fact to retrieve.')],
+    group_id: Annotated[
+        str | None, Field(description='Graph namespace containing the fact.')
+    ] = None,
+) -> dict[str, Any] | ErrorResponse:
     """Get an entity edge from the graph memory by its UUID.
 
     Args:
@@ -790,15 +950,22 @@ async def get_entity_edge(uuid: str, group_id: str | None = None) -> dict[str, A
         # Return the Python dict directly - MCP will handle serialization
         return format_fact_result(entity_edge)
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error getting entity edge: {error_msg}')
-        return ErrorResponse(error=f'Error getting entity edge: {error_msg}')
+        return ErrorResponse(error=public_error('Getting entity edge', e))
 
 
-@mcp.tool()
+@lazy_tool(
+    title='Get Episodes',
+    description='Retrieve recent episodic memory records for one or more groups.',
+    annotations=READ_ONLY_ANNOTATIONS,
+)
 async def get_episodes(
-    group_ids: str | list[str] | None = None,
-    max_episodes: int = 10,
+    group_ids: Annotated[
+        str | list[str] | None,
+        Field(description='One graph group ID or a list of graph group IDs.'),
+    ] = None,
+    max_episodes: Annotated[
+        int, Field(description='Maximum episodes to return.', ge=1, le=100)
+    ] = 10,
 ) -> EpisodeSearchResponse | ErrorResponse:
     """Get episodes from the graph memory.
 
@@ -870,14 +1037,19 @@ async def get_episodes(
             message='Episodes retrieved successfully', episodes=episode_results
         )
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error getting episodes: {error_msg}')
-        return ErrorResponse(error=f'Error getting episodes: {error_msg}')
+        return ErrorResponse(error=public_error('Getting episodes', e))
 
 
-@mcp.tool()
+@lazy_tool(
+    title='Summarize Saga',
+    description='Generate or refresh the running summary of an ordered episode saga.',
+    annotations=ASSIGN_ANNOTATIONS,
+)
 async def summarize_saga(
-    saga_name: str, group_id: str | None = None
+    saga_name: Annotated[str, Field(description='Name of the saga to summarize.')],
+    group_id: Annotated[
+        str | None, Field(description='Graph namespace containing the saga.')
+    ] = None,
 ) -> SagaSummaryResponse | ErrorResponse:
     """Summarize a saga: an ordered group of related episodes.
 
@@ -927,14 +1099,19 @@ async def summarize_saga(
             summary=saga_node.summary,
         )
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error summarizing saga: {error_msg}')
-        return ErrorResponse(error=f'Error summarizing saga: {error_msg}')
+        return ErrorResponse(error=public_error('Summarizing saga', e))
 
 
-@mcp.tool()
+@lazy_tool(
+    title='Build Communities',
+    description='Detect graph communities and generate their summaries.',
+    annotations=ASSIGN_ANNOTATIONS,
+)
 async def build_communities(
-    group_ids: str | list[str] | None = None,
+    group_ids: Annotated[
+        str | list[str] | None,
+        Field(description='One graph group ID or a list of graph group IDs.'),
+    ] = None,
 ) -> BuildCommunitiesResponse | ErrorResponse:
     """Detect and build community summaries over the graph's entities.
 
@@ -981,20 +1158,26 @@ async def build_communities(
             communities=community_results,
         )
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error building communities: {error_msg}')
-        return ErrorResponse(error=f'Error building communities: {error_msg}')
+        return ErrorResponse(error=public_error('Building communities', e))
 
 
-@mcp.tool()
+@lazy_tool(
+    title='Add Triplet',
+    description='Write one source-fact-target triplet directly to the graph.',
+    annotations=CREATE_ANNOTATIONS,
+)
 async def add_triplet(
-    source_node_name: str,
-    edge_name: str,
-    fact: str,
-    target_node_name: str,
-    group_id: str | None = None,
-    source_node_uuid: str | None = None,
-    target_node_uuid: str | None = None,
+    source_node_name: Annotated[str, Field(description='Name of the source entity.')],
+    edge_name: Annotated[str, Field(description='Relationship or fact type name.')],
+    fact: Annotated[str, Field(description='Natural-language statement describing the fact.')],
+    target_node_name: Annotated[str, Field(description='Name of the target entity.')],
+    group_id: Annotated[str | None, Field(description='Graph namespace for the triplet.')] = None,
+    source_node_uuid: Annotated[
+        str | None, Field(description='Optional UUID of an existing source entity.')
+    ] = None,
+    target_node_uuid: Annotated[
+        str | None, Field(description='Optional UUID of an existing target entity.')
+    ] = None,
 ) -> TripletResponse | ErrorResponse:
     """Directly add a single fact triplet (source entity -> fact -> target entity).
 
@@ -1057,15 +1240,21 @@ async def add_triplet(
             edges=[to_edge_result(e) for e in result.edges],
         )
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error adding triplet: {error_msg}')
-        return ErrorResponse(error=f'Error adding triplet: {error_msg}')
+        return ErrorResponse(error=public_error('Adding triplet', e))
 
 
-@mcp.tool()
+@lazy_tool(
+    title='Get Episode Entities',
+    description='Retrieve entities and facts created by specified episode UUIDs.',
+    annotations=READ_ONLY_ANNOTATIONS,
+)
 async def get_episode_entities(
-    episode_uuids: list[str],
-    group_id: str | None = None,
+    episode_uuids: Annotated[
+        list[str], Field(description='Episode UUIDs whose entities and facts are requested.')
+    ],
+    group_id: Annotated[
+        str | None, Field(description='Graph namespace containing the episodes.')
+    ] = None,
 ) -> EpisodeEntitiesResponse | ErrorResponse:
     """Get the entities (nodes) and facts (edges) created by specific episodes.
 
@@ -1101,14 +1290,19 @@ async def get_episode_entities(
             edges=[to_edge_result(e) for e in results.edges],
         )
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error getting episode entities: {error_msg}')
-        return ErrorResponse(error=f'Error getting episode entities: {error_msg}')
+        return ErrorResponse(error=public_error('Getting episode entities', e))
 
 
-@mcp.tool()
+@lazy_tool(
+    title='Clear Graph',
+    description='Delete all graph data for the specified groups.',
+    annotations=MUTATE_ANNOTATIONS,
+)
 async def clear_graph(
-    group_ids: str | list[str] | None = None,
+    group_ids: Annotated[
+        str | list[str] | None,
+        Field(description='One graph group ID or a list of graph group IDs to delete.'),
+    ] = None,
 ) -> SuccessResponse | ErrorResponse:
     """Clear all data from the graph for specified group IDs.
 
@@ -1145,12 +1339,14 @@ async def clear_graph(
             message=f'Graph data cleared successfully for group IDs: {", ".join(effective_group_ids)}'
         )
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error clearing graph: {error_msg}')
-        return ErrorResponse(error=f'Error clearing graph: {error_msg}')
+        return ErrorResponse(error=public_error('Clearing graph', e))
 
 
-@mcp.tool()
+@lazy_tool(
+    title='Get Status',
+    description='Check MCP server configuration and database connectivity.',
+    annotations=READ_ONLY_ANNOTATIONS,
+)
 async def get_status() -> StatusResponse:
     """Get the status of the Graphiti MCP server and database connection."""
     global graphiti_service
@@ -1175,12 +1371,15 @@ async def get_status() -> StatusResponse:
             message=f'Graphiti MCP server is running and connected to {provider_name} database',
         )
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f'Error checking database connection: {error_msg}')
         return StatusResponse(
             status='error',
-            message=f'Graphiti MCP server is running but database connection failed: {error_msg}',
+            message=public_error('Checking database connection', e),
         )
+
+
+if read_only_mode():
+    for tool_name in MUTATING_TOOLS:
+        mcp.remove_tool(tool_name)
 
 
 @mcp.custom_route('/health', methods=['GET'])
@@ -1191,15 +1390,19 @@ async def health_check(request) -> JSONResponse:
 
 async def initialize_server() -> ServerConfig:
     """Parse CLI arguments and initialize the Graphiti server configuration."""
-    global config, graphiti_service, queue_service, graphiti_client, semaphore
+    global config
 
     parser = argparse.ArgumentParser(
         description='Run the Graphiti MCP server with YAML configuration support'
     )
+    parser.add_argument(
+        '--version',
+        action='version',
+        version=f'%(prog)s {installed_server_version()}',
+    )
 
     # Configuration file argument
-    # Default to config/config.yaml relative to the mcp_server directory
-    default_config = Path(__file__).parent.parent / 'config' / 'config.yaml'
+    default_config = default_config_path()
     parser.add_argument(
         '--config',
         type=Path,
@@ -1306,29 +1509,56 @@ async def initialize_server() -> ServerConfig:
         else:
             logger.info('  - Graphiti Core: version unavailable')
 
-    # Handle graph destruction if requested
-    if hasattr(config, 'destroy_graph') and config.destroy_graph:
+    if config.destroy_graph:
+        if read_only_mode():
+            raise RuntimeError('--destroy-graph cannot be used in read-only mode')
+        await initialize_runtime_services()
         logger.warning('Destroying all Graphiti graphs as requested...')
-        temp_service = GraphitiService(config, SEMAPHORE_LIMIT)
-        await temp_service.initialize()
-        client = await temp_service.get_client()
+        client = await graphiti_service.get_client()  # type: ignore[union-attr]
         await clear_data(client.driver)
         logger.info('All graphs destroyed')
 
-    # Initialize services
-    graphiti_service = GraphitiService(config, SEMAPHORE_LIMIT)
-    queue_service = QueueService()
-    await graphiti_service.initialize()
-
-    # Set global client for backward compatibility
-    graphiti_client = await graphiti_service.get_client()
-    semaphore = graphiti_service.semaphore
-
-    # Initialize queue service with the client
-    await queue_service.initialize(graphiti_client)
-
     # Return MCP configuration for transport
     return config.server
+
+
+def installed_server_version() -> str:
+    """Return the packaged server version, with a source-tree fallback."""
+    try:
+        return version('mcp-server-graphiti')
+    except PackageNotFoundError:
+        return '1.1.5'
+
+
+def default_config_path() -> Path:
+    """Resolve the packaged config, falling back to the source-tree config."""
+    candidates = [
+        Path(os.environ.get('MCP_SERVER_GRAPHITI_CONFIG', '/etc/mcp-server-graphiti/config.yaml')),
+        Path(__file__).parent.parent / 'config' / 'config.yaml',
+    ]
+    return next((candidate for candidate in candidates if candidate.exists()), candidates[0])
+
+
+_service_initialization_lock = asyncio.Lock()
+
+
+async def initialize_runtime_services() -> None:
+    """Initialize external clients only when a tool first needs them."""
+    global graphiti_service, queue_service, graphiti_client, semaphore
+
+    if graphiti_service is not None and queue_service is not None:
+        return
+
+    async with _service_initialization_lock:
+        if graphiti_service is not None and queue_service is not None:
+            return
+
+        graphiti_service = GraphitiService(config, SEMAPHORE_LIMIT)
+        queue_service = QueueService()
+        await graphiti_service.initialize()
+        graphiti_client = await graphiti_service.get_client()
+        semaphore = graphiti_service.semaphore
+        await queue_service.initialize(graphiti_client)
 
 
 async def run_mcp_server():
@@ -1381,7 +1611,7 @@ def main():
     except KeyboardInterrupt:
         logger.info('Server shutting down...')
     except Exception as e:
-        logger.error(f'Error initializing Graphiti MCP server: {str(e)}')
+        logger.error('Error initializing Graphiti MCP server (%s)', type(e).__name__)
         raise
 
 

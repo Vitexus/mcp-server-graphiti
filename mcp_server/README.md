@@ -34,6 +34,26 @@ The Graphiti MCP server provides comprehensive knowledge graph capabilities:
 
 ## Quick Start
 
+### Debian or Ubuntu packages
+
+Install the server from the VitexSoftware repository:
+
+```bash
+apt install mcp-server-graphiti
+```
+
+The package defaults to stdio and Neo4j. Configure `/etc/mcp-server-graphiti/config.yaml`
+or set `NEO4J_*` and `OPENAI_*` variables, then run:
+
+```bash
+mcp-server-graphiti --transport stdio
+```
+
+Install `mcprack-mcp-server-graphiti` to register the same binary with mcprack. The
+companion sets `MCP_SERVER_GRAPHITI_READ_ONLY=true`, so mutating tools are not exposed.
+Install the `python3-falkordb` extra separately and select FalkorDB explicitly to retain
+that optional backend.
+
 ### Clone the Graphiti GitHub repo
 
 ```bash
@@ -249,6 +269,8 @@ The `config.yaml` file supports environment variable expansion using `${VAR_NAME
 - `NEO4J_PASSWORD`: Neo4j password (default: `demodemo`)
 - `NEO4J_DATABASE`: Neo4j database name (default: `neo4j`)
 - `OPENAI_API_KEY`: OpenAI API key (required for OpenAI LLM/embedder)
+- `OPENAI_API_URL`: OpenAI API base URL (default: `https://api.openai.com/v1`)
+- `EMBEDDER_MODEL`: OpenAI embedding model (default: `text-embedding-3-small`)
 - `ANTHROPIC_API_KEY`: Anthropic API key (for Claude models)
 - `GOOGLE_API_KEY`: Google API key (for Gemini models)
 - `GROQ_API_KEY`: Groq API key (for Groq models)
@@ -260,6 +282,18 @@ The `config.yaml` file supports environment variable expansion using `${VAR_NAME
 - `AZURE_OPENAI_API_VERSION`: Optional Azure OpenAI API version
 - `USE_AZURE_AD`: Optional use Azure Managed Identities for authentication
 - `SEMAPHORE_LIMIT`: Episode processing concurrency. See [Concurrency and LLM Provider 429 Rate Limit Errors](#concurrency-and-llm-provider-429-rate-limit-errors)
+- `MCP_SERVER_GRAPHITI_READ_ONLY`: Set to `true` to register only retrieval/status tools.
+- `MCP_SERVER_GRAPHITI_CONFIG`: Configuration path; the Debian default is
+  `/etc/mcp-server-graphiti/config.yaml`.
+- `GRAPHITI_TELEMETRY_ENABLED`: Set to `false` to disable anonymous Graphiti telemetry.
+- `GRAPHITI_GROUP_ID`: Default graph namespace (default: `main`).
+- `EPISODE_ID_PREFIX`: Optional prefix for configured episode identifiers.
+- `USER_ID`: Logical Graphiti user identifier (default: `mcp_user`).
+- `USE_PARALLEL_RUNTIME`: Enable Neo4j parallel runtime when supported.
+- `FALKORDB_URI`: Optional FalkorDB endpoint (default: `redis://localhost:6379`).
+- `FALKORDB_USERNAME`: Optional FalkorDB username.
+- `FALKORDB_PASSWORD`: Optional FalkorDB password (secret).
+- `FALKORDB_DATABASE`: Optional FalkorDB database name.
 
 You can set these variables in a `.env` file in the project directory.
 
@@ -561,6 +595,17 @@ For HTTP transport (default), you can use this configuration:
 ## Available Tools
 
 The Graphiti MCP server exposes the following tools:
+
+Tool annotations describe each operation to MCP clients. Read-only mode removes all tools
+not classified as read-only.
+
+| Tool | Annotation class |
+|---|---|
+| `search_nodes`, `search_memory_facts` | Read-only |
+| `get_entity_edge`, `get_episodes`, `get_episode_entities`, `get_status` | Read-only |
+| `summarize_saga`, `build_communities` | Idempotent write |
+| `add_memory`, `add_triplet` | Create-like write |
+| `delete_entity_edge`, `delete_episode`, `clear_graph` | Destructive, idempotent write |
 
 - `add_memory`: Add an episode to the knowledge graph (supports text, JSON, and message formats).
   Supports the bi-temporal `reference_time`, `excluded_entity_types`, `custom_extraction_instructions`,

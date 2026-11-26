@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="console-application">
+  <id>io.github.vitexsoftware.mcp-server-graphiti</id>
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <name>Graphiti MCP Server</name>
+  <summary>MCP server for temporal knowledge graphs</summary>
+  <description>
+    <p>
+      Graphiti MCP Server exposes an AI-agent memory system backed by a temporal
+      knowledge graph. It supports episodic ingestion, entity and fact search,
+      provenance lookup, saga summaries, and community detection.
+    </p>
+    <p>
+      The Debian package uses the Model Context Protocol over standard input and
+      output and connects to an externally managed Neo4j service. A companion
+      package can register the server in mcprack with mutating tools disabled.
+    </p>
+  </description>
+  <developer id="io.github.getzep">
+    <name>Zep Software, Inc.</name>
+  </developer>
+  <url type="homepage">https://github.com/getzep/graphiti</url>
+  <url type="vcs-browser">https://github.com/Vitexus/mcp-server-graphiti</url>
+  <url type="bugtracker">https://github.com/Vitexus/mcp-server-graphiti/issues</url>
+  <provides>
+    <binary>mcp-server-graphiti</binary>
+  </provides>
+  <icon type="stock">utilities-terminal</icon>
+</component>

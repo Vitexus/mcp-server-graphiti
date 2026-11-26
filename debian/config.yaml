@@ -1,0 +1,36 @@
+server:
+  transport: stdio
+  host: 127.0.0.1
+  port: 8000
+
+llm:
+  provider: openai
+  model: ${MODEL_NAME:gpt-6-luna}
+  max_tokens: 4096
+  providers:
+    openai:
+      api_key: ${OPENAI_API_KEY}
+      api_url: ${OPENAI_API_URL:https://api.openai.com/v1}
+
+embedder:
+  provider: openai
+  model: ${EMBEDDER_MODEL:text-embedding-3-small}
+  dimensions: 1536
+  providers:
+    openai:
+      api_key: ${OPENAI_API_KEY}
+      api_url: ${OPENAI_API_URL:https://api.openai.com/v1}
+
+database:
+  provider: neo4j
+  providers:
+    neo4j:
+      uri: ${NEO4J_URI:bolt://localhost:7687}
+      username: ${NEO4J_USER:neo4j}
+      password: ${NEO4J_PASSWORD}
+      database: ${NEO4J_DATABASE:neo4j}
+
+graphiti:
+  group_id: ${GRAPHITI_GROUP_ID:main}
+  episode_id_prefix: ${EPISODE_ID_PREFIX:}
+  user_id: ${USER_ID:mcp_user}

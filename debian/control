@@ -1,0 +1,72 @@
+Source: mcp-server-graphiti
+Section: python
+Priority: optional
+Maintainer: Vítězslav Dvořák <info@vitexsoftware.cz>
+Build-Depends:
+ appstream,
+ debhelper-compat (= 13),
+ dh-python,
+ pybuild-plugin-pyproject,
+ python3-all,
+ python3-hatchling,
+ python3-installer,
+Standards-Version: 4.7.0
+Homepage: https://github.com/getzep/graphiti
+Vcs-Git: https://github.com/Vitexus/mcp-server-graphiti.git
+Vcs-Browser: https://github.com/Vitexus/mcp-server-graphiti
+Rules-Requires-Root: no
+
+Package: python3-graphiti-core
+Architecture: all
+Depends:
+ ${misc:Depends},
+ ${python3:Depends},
+ python3-certifi (>= 2026.10.19),
+ python3-dotenv (>= 1.0.1),
+ python3-httpx (>= 0.28.1),
+ python3-neo4j (>= 5.26.0),
+ python3-numpy,
+ python3-openai (>= 1.91.0),
+ python3-posthog (>= 3.0.0),
+ python3-pydantic (>= 2.11.5),
+ python3-tenacity (>= 9.0.0),
+Description: Temporal knowledge graph library for AI agents
+ Graphiti builds and queries bi-temporal knowledge graphs from episodic
+ information. It combines semantic, keyword and graph search and supports
+ Neo4j for graph storage.
+ .
+ This package provides the reusable Graphiti Python 3 library.
+
+Package: mcp-server-graphiti
+Architecture: all
+Multi-Arch: foreign
+Depends:
+ ${misc:Depends},
+ ${python3:Depends},
+ python3-graphiti-core (= ${binary:Version}),
+ python3-mcp (>= 2),
+ python3-openai (>= 2.41.0),
+ python3-pydantic-settings,
+ python3-typing-extensions,
+ python3-yaml (>= 6.0.3),
+Suggests:
+ python3-falkordb (>= 1.1.2),
+Description: MCP server for temporal Graphiti knowledge graphs
+ Model Context Protocol server exposing search, ingestion and graph
+ maintenance operations backed by Graphiti. The packaged defaults are
+ stdio transport with a Neo4j database. Backend initialization is lazy,
+ so clients can perform MCP discovery without credentials or a live
+ database.
+ .
+ The companion mcprack package registers this server read-only by default.
+
+Package: mcprack-mcp-server-graphiti
+Architecture: all
+Depends:
+ ${misc:Depends},
+ mcprack (>= 1.6.0),
+ mcp-server-graphiti (= ${binary:Version}),
+Description: Registers Graphiti MCP server into mcprack catalog
+ Companion package for mcp-server-graphiti. Installing it registers the
+ mcp-server-graphiti stdio binary in mcprack with mutating tools disabled;
+ removing the companion unregisters it.

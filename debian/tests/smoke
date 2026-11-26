@@ -1,0 +1,4 @@
+#!/bin/sh
+set -e
+mcprack server probe /usr/bin/mcp-server-graphiti \
+  --set-env MCP_SERVER_GRAPHITI_READ_ONLY=true

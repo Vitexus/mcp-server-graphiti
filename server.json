@@ -1,0 +1,959 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.vitexsoftware/mcp-server-graphiti",
+  "title": "Graphiti MCP Server",
+  "description": "Store and search temporal AI-agent memory in a Graphiti knowledge graph.",
+  "version": "1.1.5",
+  "websiteUrl": "https://github.com/Vitexus/mcp-server-graphiti",
+  "repository": {
+    "url": "https://github.com/Vitexus/mcp-server-graphiti",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "mcp-server-graphiti",
+      "version": "1.1.5",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MCP_SERVER_GRAPHITI_READ_ONLY",
+          "description": "Disable mutating MCP tools when true.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "false"
+        },
+        {
+          "name": "MCP_SERVER_GRAPHITI_CONFIG",
+          "description": "Path to the Graphiti YAML configuration.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "/etc/mcp-server-graphiti/config.yaml"
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "description": "OpenAI API key used for extraction and embeddings.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "OPENAI_API_URL",
+          "description": "OpenAI-compatible API base URL.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "https://api.openai.com/v1"
+        },
+        {
+          "name": "MODEL_NAME",
+          "description": "Language model used for graph extraction.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "gpt-6-luna"
+        },
+        {
+          "name": "EMBEDDER_MODEL",
+          "description": "OpenAI embedding model.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "text-embedding-3-small"
+        },
+        {
+          "name": "NEO4J_URI",
+          "description": "Neo4j Bolt endpoint.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "bolt://localhost:7687"
+        },
+        {
+          "name": "NEO4J_USER",
+          "description": "Neo4j username.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "neo4j"
+        },
+        {
+          "name": "NEO4J_PASSWORD",
+          "description": "Neo4j password.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "NEO4J_DATABASE",
+          "description": "Neo4j database name.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "neo4j"
+        },
+        {
+          "name": "GRAPHITI_GROUP_ID",
+          "description": "Default graph namespace.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "main"
+        },
+        {
+          "name": "SEMAPHORE_LIMIT",
+          "description": "Maximum concurrent Graphiti operations.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "10"
+        },
+        {
+          "name": "GRAPHITI_TELEMETRY_ENABLED",
+          "description": "Allow anonymous Graphiti telemetry when true.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "true"
+        },
+        {
+          "name": "EPISODE_ID_PREFIX",
+          "description": "Optional prefix applied to configured episode IDs.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": ""
+        },
+        {
+          "name": "USER_ID",
+          "description": "Logical user identifier used by Graphiti operations.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "mcp_user"
+        },
+        {
+          "name": "USE_PARALLEL_RUNTIME",
+          "description": "Enable Neo4j parallel runtime when supported.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "false"
+        },
+        {
+          "name": "FALKORDB_URI",
+          "description": "FalkorDB Redis endpoint for the optional backend.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "redis://localhost:6379"
+        },
+        {
+          "name": "FALKORDB_USERNAME",
+          "description": "Optional FalkorDB username.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "FALKORDB_PASSWORD",
+          "description": "Optional FalkorDB password.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "FALKORDB_DATABASE",
+          "description": "FalkorDB graph database name.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "default_db"
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "cz.vitexsoftware.mcp": {
+        "uuid": "7b85f0ea-47dc-41ad-a112-588915b75fab",
+        "author": {
+          "name": "Vítězslav Dvořák",
+          "url": "https://github.com/Vitexus"
+        },
+        "category": "knowledge-management",
+        "tags": [
+          "graphiti",
+          "knowledge-graph",
+          "memory"
+        ],
+        "tools": [
+          {
+            "name": "add_memory",
+            "description": "Queue an episode for extraction and insertion into the knowledge graph.",
+            "title": "Add Memory",
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": true,
+              "readOnlyHint": false
+            },
+            "inputSchema": {
+              "properties": {
+                "name": {
+                  "description": "Human-readable episode name.",
+                  "title": "Name",
+                  "type": "string"
+                },
+                "episode_body": {
+                  "description": "Text, JSON, or message content to ingest.",
+                  "title": "Episode Body",
+                  "type": "string"
+                },
+                "group_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Graph namespace; the configured default is used when omitted.",
+                  "title": "Group Id"
+                },
+                "source": {
+                  "default": "text",
+                  "description": "Episode source type: text, json, or message.",
+                  "title": "Source",
+                  "type": "string"
+                },
+                "source_description": {
+                  "default": "",
+                  "description": "Optional provenance description for the episode.",
+                  "title": "Source Description",
+                  "type": "string"
+                },
+                "uuid": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Optional caller-supplied episode UUID.",
+                  "title": "Uuid"
+                },
+                "reference_time": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "ISO-8601 event occurrence time; omitted means now.",
+                  "title": "Reference Time"
+                },
+                "excluded_entity_types": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Configured entity type names to skip during extraction.",
+                  "title": "Excluded Entity Types"
+                },
+                "custom_extraction_instructions": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Episode-specific extraction guidance.",
+                  "title": "Custom Extraction Instructions"
+                },
+                "previous_episode_uuids": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Explicit prior episode UUIDs used as context.",
+                  "title": "Previous Episode Uuids"
+                },
+                "update_communities": {
+                  "default": false,
+                  "description": "Refresh affected community summaries after ingestion.",
+                  "title": "Update Communities",
+                  "type": "boolean"
+                },
+                "saga": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Optional saga name used to order related episodes.",
+                  "title": "Saga"
+                },
+                "saga_previous_episode_uuid": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "UUID of the preceding episode in the saga.",
+                  "title": "Saga Previous Episode Uuid"
+                }
+              },
+              "required": [
+                "name",
+                "episode_body"
+              ],
+              "type": "object",
+              "title": "add_memoryArguments"
+            }
+          },
+          {
+            "name": "search_nodes",
+            "description": "Search graph entities with semantic, keyword, and graph ranking.",
+            "title": "Search Nodes",
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": true,
+              "readOnlyHint": true
+            },
+            "inputSchema": {
+              "properties": {
+                "query": {
+                  "description": "Semantic or keyword entity search query.",
+                  "title": "Query",
+                  "type": "string"
+                },
+                "group_ids": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "One graph group ID or a list of graph group IDs.",
+                  "title": "Group Ids"
+                },
+                "max_nodes": {
+                  "default": 10,
+                  "description": "Maximum nodes to return.",
+                  "maximum": 100,
+                  "minimum": 1,
+                  "title": "Max Nodes",
+                  "type": "integer"
+                },
+                "entity_types": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Optional entity type names to include.",
+                  "title": "Entity Types"
+                },
+                "center_node_uuid": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Entity UUID used as the graph-distance search center.",
+                  "title": "Center Node Uuid"
+                }
+              },
+              "required": [
+                "query"
+              ],
+              "type": "object",
+              "title": "search_nodesArguments"
+            }
+          },
+          {
+            "name": "search_memory_facts",
+            "description": "Search temporal facts and optionally filter by graph or date range.",
+            "title": "Search Memory Facts",
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": true,
+              "readOnlyHint": true
+            },
+            "inputSchema": {
+              "properties": {
+                "query": {
+                  "description": "Semantic or keyword fact search query.",
+                  "title": "Query",
+                  "type": "string"
+                },
+                "group_ids": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "One graph group ID or a list of graph group IDs.",
+                  "title": "Group Ids"
+                },
+                "max_facts": {
+                  "default": 10,
+                  "description": "Maximum facts to return.",
+                  "maximum": 100,
+                  "minimum": 1,
+                  "title": "Max Facts",
+                  "type": "integer"
+                },
+                "center_node_uuid": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Entity UUID used as the graph-distance search center.",
+                  "title": "Center Node Uuid"
+                },
+                "edge_types": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Optional fact type names to include.",
+                  "title": "Edge Types"
+                },
+                "valid_at_after": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Inclusive ISO-8601 lower bound for fact validity.",
+                  "title": "Valid At After"
+                },
+                "valid_at_before": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Exclusive ISO-8601 upper bound for fact validity.",
+                  "title": "Valid At Before"
+                },
+                "invalid_at_after": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Inclusive ISO-8601 lower bound for fact invalidation.",
+                  "title": "Invalid At After"
+                },
+                "invalid_at_before": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Exclusive ISO-8601 upper bound for fact invalidation.",
+                  "title": "Invalid At Before"
+                }
+              },
+              "required": [
+                "query"
+              ],
+              "type": "object",
+              "title": "search_memory_factsArguments"
+            }
+          },
+          {
+            "name": "delete_entity_edge",
+            "description": "Delete a fact from the knowledge graph.",
+            "title": "Delete Entity Edge",
+            "annotations": {
+              "destructiveHint": true,
+              "idempotentHint": true,
+              "openWorldHint": true,
+              "readOnlyHint": false
+            },
+            "inputSchema": {
+              "properties": {
+                "uuid": {
+                  "description": "UUID of the fact to delete.",
+                  "title": "Uuid",
+                  "type": "string"
+                },
+                "group_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Graph namespace containing the fact.",
+                  "title": "Group Id"
+                }
+              },
+              "required": [
+                "uuid"
+              ],
+              "type": "object",
+              "title": "delete_entity_edgeArguments"
+            }
+          },
+          {
+            "name": "delete_episode",
+            "description": "Delete an episode and data supported only by that episode.",
+            "title": "Delete Episode",
+            "annotations": {
+              "destructiveHint": true,
+              "idempotentHint": true,
+              "openWorldHint": true,
+              "readOnlyHint": false
+            },
+            "inputSchema": {
+              "properties": {
+                "uuid": {
+                  "description": "UUID of the episode to delete.",
+                  "title": "Uuid",
+                  "type": "string"
+                },
+                "group_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Graph namespace containing the episode.",
+                  "title": "Group Id"
+                }
+              },
+              "required": [
+                "uuid"
+              ],
+              "type": "object",
+              "title": "delete_episodeArguments"
+            }
+          },
+          {
+            "name": "get_entity_edge",
+            "description": "Retrieve a temporal fact by UUID.",
+            "title": "Get Entity Edge",
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": true,
+              "readOnlyHint": true
+            },
+            "inputSchema": {
+              "properties": {
+                "uuid": {
+                  "description": "UUID of the fact to retrieve.",
+                  "title": "Uuid",
+                  "type": "string"
+                },
+                "group_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Graph namespace containing the fact.",
+                  "title": "Group Id"
+                }
+              },
+              "required": [
+                "uuid"
+              ],
+              "type": "object",
+              "title": "get_entity_edgeArguments"
+            }
+          },
+          {
+            "name": "get_episodes",
+            "description": "Retrieve recent episodic memory records for one or more groups.",
+            "title": "Get Episodes",
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": true,
+              "readOnlyHint": true
+            },
+            "inputSchema": {
+              "properties": {
+                "group_ids": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "One graph group ID or a list of graph group IDs.",
+                  "title": "Group Ids"
+                },
+                "max_episodes": {
+                  "default": 10,
+                  "description": "Maximum episodes to return.",
+                  "maximum": 100,
+                  "minimum": 1,
+                  "title": "Max Episodes",
+                  "type": "integer"
+                }
+              },
+              "type": "object",
+              "title": "get_episodesArguments"
+            }
+          },
+          {
+            "name": "summarize_saga",
+            "description": "Generate or refresh the running summary of an ordered episode saga.",
+            "title": "Summarize Saga",
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": true,
+              "readOnlyHint": false
+            },
+            "inputSchema": {
+              "properties": {
+                "saga_name": {
+                  "description": "Name of the saga to summarize.",
+                  "title": "Saga Name",
+                  "type": "string"
+                },
+                "group_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Graph namespace containing the saga.",
+                  "title": "Group Id"
+                }
+              },
+              "required": [
+                "saga_name"
+              ],
+              "type": "object",
+              "title": "summarize_sagaArguments"
+            }
+          },
+          {
+            "name": "build_communities",
+            "description": "Detect graph communities and generate their summaries.",
+            "title": "Build Communities",
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": true,
+              "readOnlyHint": false
+            },
+            "inputSchema": {
+              "properties": {
+                "group_ids": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "One graph group ID or a list of graph group IDs.",
+                  "title": "Group Ids"
+                }
+              },
+              "type": "object",
+              "title": "build_communitiesArguments"
+            }
+          },
+          {
+            "name": "add_triplet",
+            "description": "Write one source-fact-target triplet directly to the graph.",
+            "title": "Add Triplet",
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": false,
+              "openWorldHint": true,
+              "readOnlyHint": false
+            },
+            "inputSchema": {
+              "properties": {
+                "source_node_name": {
+                  "description": "Name of the source entity.",
+                  "title": "Source Node Name",
+                  "type": "string"
+                },
+                "edge_name": {
+                  "description": "Relationship or fact type name.",
+                  "title": "Edge Name",
+                  "type": "string"
+                },
+                "fact": {
+                  "description": "Natural-language statement describing the fact.",
+                  "title": "Fact",
+                  "type": "string"
+                },
+                "target_node_name": {
+                  "description": "Name of the target entity.",
+                  "title": "Target Node Name",
+                  "type": "string"
+                },
+                "group_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Graph namespace for the triplet.",
+                  "title": "Group Id"
+                },
+                "source_node_uuid": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Optional UUID of an existing source entity.",
+                  "title": "Source Node Uuid"
+                },
+                "target_node_uuid": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Optional UUID of an existing target entity.",
+                  "title": "Target Node Uuid"
+                }
+              },
+              "required": [
+                "source_node_name",
+                "edge_name",
+                "fact",
+                "target_node_name"
+              ],
+              "type": "object",
+              "title": "add_tripletArguments"
+            }
+          },
+          {
+            "name": "get_episode_entities",
+            "description": "Retrieve entities and facts created by specified episode UUIDs.",
+            "title": "Get Episode Entities",
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": true,
+              "readOnlyHint": true
+            },
+            "inputSchema": {
+              "properties": {
+                "episode_uuids": {
+                  "description": "Episode UUIDs whose entities and facts are requested.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Episode Uuids",
+                  "type": "array"
+                },
+                "group_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Graph namespace containing the episodes.",
+                  "title": "Group Id"
+                }
+              },
+              "required": [
+                "episode_uuids"
+              ],
+              "type": "object",
+              "title": "get_episode_entitiesArguments"
+            }
+          },
+          {
+            "name": "clear_graph",
+            "description": "Delete all graph data for the specified groups.",
+            "title": "Clear Graph",
+            "annotations": {
+              "destructiveHint": true,
+              "idempotentHint": true,
+              "openWorldHint": true,
+              "readOnlyHint": false
+            },
+            "inputSchema": {
+              "properties": {
+                "group_ids": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "One graph group ID or a list of graph group IDs to delete.",
+                  "title": "Group Ids"
+                }
+              },
+              "type": "object",
+              "title": "clear_graphArguments"
+            }
+          },
+          {
+            "name": "get_status",
+            "description": "Check MCP server configuration and database connectivity.",
+            "title": "Get Status",
+            "annotations": {
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": true,
+              "readOnlyHint": true
+            },
+            "inputSchema": {
+              "properties": {},
+              "type": "object",
+              "title": "get_statusArguments"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

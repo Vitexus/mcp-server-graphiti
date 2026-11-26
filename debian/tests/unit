@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+python3 -m pytest \
+  mcp_server/tests/test_packaging_contract.py \
+  mcp_server/tests/test_core_parity.py \
+  mcp_server/tests/test_group_routing.py \
+  mcp_server/tests/test_factories.py \
+  mcp_server/tests/test_configuration.py \
+  mcp_server/tests/test_falkordb_config.py \
+  -v

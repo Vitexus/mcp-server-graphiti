@@ -1,0 +1,4 @@
+graphiti-core python3-graphiti-core
+mcp-server-graphiti mcp-server-graphiti
+neo4j python3-neo4j
+posthog python3-posthog
