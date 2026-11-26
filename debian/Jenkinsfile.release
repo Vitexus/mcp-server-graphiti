@@ -222,7 +222,7 @@ distributions.each { distro ->
                         buildImage.inside('--ipc=host -v ' + t.base + ':' + t.base) {
                             dir(t.tree) {
                                 sh 'dch -b -v ' + buildVer  + ' "' + env.BUILD_TAG  + '"'
-                                sh "sudo sed -i 's/ backports$//' /etc/apt/sources.list.d/vitexsoftware.list"
+                                sh 'sudo sed -i "s/ backports$//" /etc/apt/sources.list.d/vitexsoftware.list'
                                 sh 'sudo apt-get update --allow-releaseinfo-change'
                                 sh 'debuild-pbuilder -r"sudo -E" -i -us -uc -b'
                                 // debuild drops .deb/.changes into `..`, which is
