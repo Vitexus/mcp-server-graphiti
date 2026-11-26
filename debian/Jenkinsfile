@@ -260,6 +260,7 @@ distributions.each { distro ->
                                 withEnv(["BUILDVER=${buildVer}"]) {
                                     sh 'dch -b -v "$BUILDVER" "$BUILD_TAG"'
                                 }
+                                sh "sudo sed -i 's/ backports$//' /etc/apt/sources.list.d/vitexsoftware.list"
                                 sh 'sudo apt-get update --allow-releaseinfo-change'
                                 sh 'sudo rm -rf debian/$(dpkg-parsechangelog --show-field Source)/ debian/.debhelper/ debian/tmp/'
                                 sh '''
