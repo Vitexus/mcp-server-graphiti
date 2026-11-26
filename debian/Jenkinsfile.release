@@ -223,7 +223,15 @@ distributions.each { distro ->
                             dir(t.tree) {
                                 sh 'dch -b -v ' + buildVer  + ' "' + env.BUILD_TAG  + '"'
                                 sh 'sudo sed -i "s/ backports$//" /etc/apt/sources.list.d/vitexsoftware.list'
-                                sh 'sudo apt-get update --allow-releaseinfo-change'
+                                sh '''
+                                    for attempt in 1 2 3 4 5; do
+                                        if sudo apt-get update --allow-releaseinfo-change; then
+                                            exit 0
+                                        fi
+                                        sleep 30
+                                    done
+                                    exit 1
+                                '''
                                 sh 'debuild-pbuilder -r"sudo -E" -i -us -uc -b'
                                 // debuild drops .deb/.changes into `..`, which is
                                 // now t.base -- private to this build on this node,
@@ -253,7 +261,15 @@ distributions.each { distro ->
                                 withEnv(["LB_OUT=${t.out}"]) {
                                     sh 'cd "$LB_OUT" ; dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz'
                                     sh 'echo "deb [trusted=yes] file://$LB_OUT/ ./" | sudo tee /etc/apt/sources.list.d/local.list'
-                                    sh 'sudo apt-get update --allow-releaseinfo-change'
+                                    sh '''
+                                        for attempt in 1 2 3 4 5; do
+                                            if sudo apt-get update --allow-releaseinfo-change; then
+                                                exit 0
+                                            fi
+                                            sleep 30
+                                        done
+                                        exit 1
+                                    '''
                                     sh 'echo "INSTALATION"'
                                     artifacts.each { deb_file ->
                                         if (deb_file.endsWith('.deb')) {

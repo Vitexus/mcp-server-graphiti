@@ -258,7 +258,15 @@ distributions.each { distro ->
                                     sh 'dch -b -v "$BUILDVER" "$BUILD_TAG"'
                                 }
                                 sh 'sudo sed -i "s/ backports$//" /etc/apt/sources.list.d/vitexsoftware.list'
-                                sh 'sudo apt-get update --allow-releaseinfo-change'
+                                sh '''
+                                    for attempt in 1 2 3 4 5; do
+                                        if sudo apt-get update --allow-releaseinfo-change; then
+                                            exit 0
+                                        fi
+                                        sleep 30
+                                    done
+                                    exit 1
+                                '''
                                 sh 'sudo rm -rf debian/$(dpkg-parsechangelog --show-field Source)/ debian/.debhelper/ debian/tmp/'
                                 sh '''
                                     export DH_INTERNAL_BUILDDIR="/tmp/debhelper-build-''' + uniqueBuildId + '''"
@@ -295,7 +303,15 @@ distributions.each { distro ->
                                 withEnv(["LB_OUT=${t.out}"]) {
                                     sh 'cd "$LB_OUT" ; dpkg-scanpackages . /dev/null > Packages; gzip -9c Packages > Packages.gz'
                                     sh 'echo "deb [trusted=yes] file://$LB_OUT/ ./" | sudo tee /etc/apt/sources.list.d/local.list'
-                                    sh 'sudo apt-get update --allow-releaseinfo-change'
+                                    sh '''
+                                        for attempt in 1 2 3 4 5; do
+                                            if sudo apt-get update --allow-releaseinfo-change; then
+                                                exit 0
+                                            fi
+                                            sleep 30
+                                        done
+                                        exit 1
+                                    '''
                                     sh 'echo "INSTALATION"'
 
                                     def installOrder = [
